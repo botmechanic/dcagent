@@ -1,0 +1,54 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+.venv/
+.env/
+
+# Poetry-specific files
+poetry.lock
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Logs and databases
+*.log
+db.sqlite3
+
+# MacOS and Linux system files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Testing / coverage
+.tox/
+.nox/
+.coverage
+.coverage.*
+nosetests.xml
+pytest_cache/
+htmlcov/
+
+# MyPy type checking
+.mypy_cache/
+.dmypy.json
+
+# PyCharm
+*.iml
+*.pyc
+/out/
+
+# Miscellaneous
+*.bak
+*.tmp
+
+.env
