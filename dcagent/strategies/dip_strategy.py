@@ -1,14 +1,41 @@
-# dcagent/strategies/dip_strategy.py
 import logging
+import time
+import json
+import os
 from datetime import datetime, timedelta
 from typing import List, Optional
 
-from dcagent.config import DCA_AMOUNT, DIP_THRESHOLD, ENABLE_DIP_BUYING
+from dcagent.config import (
+    DCA_AMOUNT, 
+    DIP_THRESHOLD, 
+    ENABLE_DIP_BUYING, 
+    CBBTC_CONTRACT_ADDRESS, 
+    USDC_CONTRACT_ADDRESS,
+    AERODROME_ROUTER
+)
 from dcagent.strategies.base_strategy import BaseStrategy
-from dcagent.utils.blockchain import get_account, get_token_balance
+from dcagent.utils.blockchain import (
+    get_account, 
+    get_token_balance, 
+    approve_token_spending,
+    get_contract,
+    web3
+)
 from dcagent.utils.pyth_utils import get_btc_price
 
 logger = logging.getLogger(__name__)
+
+# Get directory of this file to construct paths correctly
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Load Router ABI
+def load_abi(filename):
+    """Load ABI from a JSON file"""
+    abi_path = os.path.join(BASE_DIR, 'abis', filename)
+    with open(abi_path, 'r') as f:
+        return json.load(f)
+
+ROUTER_ABI = load_abi('router.json')
 
 class DipBuyingStrategy(BaseStrategy):
     """
@@ -99,15 +126,85 @@ class DipBuyingStrategy(BaseStrategy):
                 logger.error(f"Insufficient USDC balance. Have: ${usdc_balance:.2f}, Need: ${DCA_AMOUNT:.2f}")
                 return False
             
-            # TODO: Implement actual swap from USDC to cbBTC
-            # This would be the same implementation as in the DCA strategy
+            # Implement actual swap from USDC to cbBTC
             
-            # For now, we'll just log that we would execute the swap
-            logger.info(f"Would swap ${DCA_AMOUNT:.2f} USDC for {btc_amount:.8f} BTC during dip (${btc_price:,.2f}/BTC)")
+            # 1. Convert amounts to wei considering token decimals
+            usdc_decimals = 6  # USDC has 6 decimals
+            usdc_amount_wei = int(DCA_AMOUNT * (10**usdc_decimals))
+            
+            # 2. Calculate minimum amount out with 0.5% slippage
+            # For dip buying, we can use a slightly higher slippage to ensure execution
+            slippage = 0.01  # 1% slippage for dip buying to ensure execution
+            min_btc_amount = btc_amount * (1 - slippage)
+            cbbtc_decimals = 18  # cbBTC has 18 decimals (like most ERC20 tokens)
+            min_btc_amount_wei = int(min_btc_amount * (10**cbbtc_decimals))
+            
+            # 3. Approve the router to spend USDC
+            logger.info(f"Approving Aerodrome Router to spend {DCA_AMOUNT} USDC for dip buying")
+            approve_receipt = approve_token_spending(
+                USDC_CONTRACT_ADDRESS, 
+                AERODROME_ROUTER,
+                DCA_AMOUNT
+            )
+            
+            if not approve_receipt or approve_receipt.status != 1:
+                logger.error("Failed to approve USDC spending")
+                return False
+            
+            logger.info(f"USDC spending approved. Transaction hash: {approve_receipt.transactionHash.hex()}")
+            
+            # 4. Execute the swap through Aerodrome Router
+            router_contract = get_contract(AERODROME_ROUTER, ROUTER_ABI)
+            
+            # Create swap transaction
+            # Set deadline to 10 minutes from now
+            deadline = int(time.time() + 600)
+            
+            logger.info(f"Executing dip buy swap: {DCA_AMOUNT} USDC -> ~{btc_amount:.8f} cbBTC at ${btc_price:,.2f}")
+            
+            # Create the route for the swap
+            routes = [{
+                "from": USDC_CONTRACT_ADDRESS,           # tokenIn
+                "to": CBBTC_CONTRACT_ADDRESS,            # tokenOut
+                "stable": False,                         # volatile pair
+                "factory": web3.to_checksum_address("0xAAA20D08e59F6561f242b08513D36266C5A29415")  # Aerodrome factory
+            }]
+            
+            swap_tx = router_contract.functions.swapExactTokensForTokens(
+                usdc_amount_wei,                          # amountIn
+                min_btc_amount_wei,                       # amountOutMin
+                routes,                                   # routes array
+                account.address,                          # to
+                deadline                                  # deadline
+            ).build_transaction({
+                'from': account.address,
+                'nonce': web3.eth.get_transaction_count(account.address),
+                'gas': 300000,  # Set appropriate gas limit
+                'gasPrice': web3.eth.gas_price,
+            })
+            
+            # Sign and send transaction
+            signed_tx = account.sign_transaction(swap_tx)
+            tx_hash = web3.eth.send_raw_transaction(signed_tx.rawTransaction)
+            
+            # Wait for transaction receipt
+            logger.info(f"Dip buy swap transaction sent. Waiting for confirmation...")
+            receipt = web3.eth.wait_for_transaction_receipt(tx_hash)
+            
+            if receipt.status != 1:
+                logger.error(f"Dip buy swap transaction failed. Transaction hash: {tx_hash.hex()}")
+                return False
+            
+            logger.info(f"Dip buy swap successful! Transaction hash: {tx_hash.hex()}")
+            
+            # Get new cbBTC balance to confirm the swap worked
+            new_cbbtc_balance = get_token_balance(CBBTC_CONTRACT_ADDRESS, account.address)
+            logger.info(f"New cbBTC balance after dip buy: {new_cbbtc_balance}")
             
             # Record this buy
             self.last_buy = datetime.now()
             self.last_execution = self.last_buy
+            logger.info(f"Dip buying recorded. Next dip buy will be available after: {self.last_buy + self.minimum_buy_interval}")
             
             return True
             
