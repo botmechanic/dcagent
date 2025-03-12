@@ -18,7 +18,8 @@ from dcagent.utils.blockchain import (
     get_token_balance, 
     approve_token_spending, 
     get_contract,
-    web3
+    web3,
+    send_contract_transaction
 )
 from dcagent.utils.pyth_utils import get_btc_price
 
@@ -140,32 +141,30 @@ class DCAStrategy(BaseStrategy):
                 "factory": web3.to_checksum_address("0xAAA20D08e59F6561f242b08513D36266C5A29415")  # Aerodrome factory
             }]
             
-            swap_tx = router_contract.functions.swapExactTokensForTokens(
+            # Execute the swap with retry logic
+            swap_function = router_contract.functions.swapExactTokensForTokens(
                 usdc_amount_wei,                          # amountIn
                 min_btc_amount_wei,                       # amountOutMin
                 routes,                                   # routes array
                 account.address,                          # to
                 deadline                                  # deadline
-            ).build_transaction({
-                'from': account.address,
-                'nonce': web3.eth.get_transaction_count(account.address),
-                'gas': 300000,  # Set appropriate gas limit
-                'gasPrice': web3.eth.gas_price,
-            })
+            )
             
-            # Sign and send transaction
-            signed_tx = account.sign_transaction(swap_tx)
-            tx_hash = web3.eth.send_raw_transaction(signed_tx.rawTransaction)
+            logger.info(f"Executing swap with retry: {DCA_AMOUNT} USDC -> ~{btc_amount:.8f} cbBTC")
             
-            # Wait for transaction receipt
-            logger.info(f"Swap transaction sent. Waiting for confirmation...")
-            receipt = web3.eth.wait_for_transaction_receipt(tx_hash)
+            # Use our retry-enabled transaction sender
+            receipt = send_contract_transaction(
+                contract_function=swap_function,
+                account=account,
+                gas_limit=300000,  # Set appropriate gas limit
+                max_retries=3
+            )
             
-            if receipt.status != 1:
-                logger.error(f"Swap transaction failed. Transaction hash: {tx_hash.hex()}")
+            if not receipt or receipt.status != 1:
+                logger.error(f"Swap transaction failed. Receipt: {receipt}")
                 return False
             
-            logger.info(f"Swap successful! Transaction hash: {tx_hash.hex()}")
+            logger.info(f"Swap successful! Transaction hash: {receipt.transactionHash.hex()}")
             
             # Get new cbBTC balance to confirm the swap worked
             new_cbbtc_balance = get_token_balance(CBBTC_CONTRACT_ADDRESS, account.address)

@@ -10,7 +10,7 @@ from web3 import Web3
 from dcagent.config import CBBTC_CONTRACT_ADDRESS, USDC_CONTRACT_ADDRESS, AERODROME_ROUTER as ROUTER_ADDRESS
 from dcagent.config import CBBTC_POOL as POOL_ADDRESS, CBBTC_GAUGE as GAUGE_ADDRESS
 from dcagent.utils.agent_kit import get_token_balance
-from dcagent.utils.blockchain import web3, get_account, get_contract, approve_token_spending
+from dcagent.utils.blockchain import web3, get_account, get_contract, approve_token_spending, send_contract_transaction
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +102,8 @@ def add_liquidity(cbbtc_amount: Decimal, usdc_amount: Decimal, slippage: float =
         # Define the factory address for Aerodrome
         factory_address = web3.to_checksum_address("0xAAA20D08e59F6561f242b08513D36266C5A29415")
         
-        tx = router_contract.functions.addLiquidity(
+        # Create the function call for adding liquidity
+        add_liquidity_fn = router_contract.functions.addLiquidity(
             CBBTC_CONTRACT_ADDRESS,                # tokenA
             USDC_CONTRACT_ADDRESS,                 # tokenB
             False,                                 # stable - assuming this is a volatile pair
@@ -112,24 +113,22 @@ def add_liquidity(cbbtc_amount: Decimal, usdc_amount: Decimal, slippage: float =
             usdc_min_amount,                       # amountBMin
             account.address,                       # to
             deadline                               # deadline
-        ).build_transaction({
-            'from': account.address,
-            'nonce': web3.eth.get_transaction_count(account.address),
-            'gas': 500000,  # Appropriate gas limit for LP operations
-            'gasPrice': web3.eth.gas_price,
-        })
+        )
         
-        # Sign and send transaction
-        signed_tx = account.sign_transaction(tx)
-        tx_hash = web3.eth.send_raw_transaction(signed_tx.rawTransaction)
+        # Execute with retry logic
+        logger.info(f"Adding liquidity with retry: {cbbtc_amount} cbBTC and {usdc_amount} USDC")
+        receipt = send_contract_transaction(
+            contract_function=add_liquidity_fn,
+            account=account,
+            gas_limit=500000,  # Appropriate gas limit for LP operations
+            max_retries=3
+        )
         
-        # Wait for transaction receipt
-        logger.info(f"Add liquidity transaction sent. Waiting for confirmation...")
-        receipt = web3.eth.wait_for_transaction_receipt(tx_hash)
-        
-        if receipt.status != 1:
-            logger.error(f"Add liquidity transaction failed. Transaction hash: {tx_hash.hex()}")
+        if not receipt or receipt.status != 1:
+            logger.error(f"Add liquidity transaction failed. Receipt: {receipt}")
             return None
+            
+        logger.info(f"Liquidity added successfully! Transaction hash: {receipt.transactionHash.hex()}")
         
         # Parse the transaction logs to get the LP tokens received
         # This is a simplified version and might need adjustment based on the actual event structure
