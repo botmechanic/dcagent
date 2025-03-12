@@ -132,12 +132,18 @@ class DCAStrategy(BaseStrategy):
             
             logger.info(f"Executing swap: {DCA_AMOUNT} USDC -> ~{btc_amount:.8f} cbBTC")
             
+            # Create the route for the swap
+            routes = [{
+                "from": USDC_CONTRACT_ADDRESS,           # tokenIn
+                "to": CBBTC_CONTRACT_ADDRESS,            # tokenOut
+                "stable": False,                         # volatile pair
+                "factory": web3.to_checksum_address("0xAAA20D08e59F6561f242b08513D36266C5A29415")  # Aerodrome factory
+            }]
+            
             swap_tx = router_contract.functions.swapExactTokensForTokens(
                 usdc_amount_wei,                          # amountIn
                 min_btc_amount_wei,                       # amountOutMin
-                USDC_CONTRACT_ADDRESS,                    # tokenIn
-                CBBTC_CONTRACT_ADDRESS,                   # tokenOut
-                False,                                    # stable - assuming this is a volatile pair
+                routes,                                   # routes array
                 account.address,                          # to
                 deadline                                  # deadline
             ).build_transaction({

@@ -99,6 +99,9 @@ def add_liquidity(cbbtc_amount: Decimal, usdc_amount: Decimal, slippage: float =
         
         logger.info(f"Adding liquidity: {cbbtc_amount} cbBTC and {usdc_amount} USDC")
         
+        # Define the factory address for Aerodrome
+        factory_address = web3.to_checksum_address("0xAAA20D08e59F6561f242b08513D36266C5A29415")
+        
         tx = router_contract.functions.addLiquidity(
             CBBTC_CONTRACT_ADDRESS,                # tokenA
             USDC_CONTRACT_ADDRESS,                 # tokenB
