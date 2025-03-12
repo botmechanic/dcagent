@@ -25,6 +25,13 @@ DIP_THRESHOLD = float(os.getenv("DIP_THRESHOLD", "5"))  # Default 5%
 # Wallet Configuration
 PRIVATE_KEY = os.getenv("PRIVATE_KEY")
 
+# Aerodrome Configuration
+AERODROME_ROUTER = os.getenv("AERODROME_ROUTER", "0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43")
+CBBTC_POOL = os.getenv("CBBTC_POOL", "")  # Need to find the actual pool
+CBBTC_GAUGE = os.getenv("CBBTC_GAUGE", "")  # Need to find the actual gauge
+ENABLE_YIELD_OPTIMIZATION = os.getenv("ENABLE_YIELD_OPTIMIZATION", "true").lower() == "true"
+REINVEST_YIELD = os.getenv("REINVEST_YIELD", "true").lower() == "true"
+
 def validate_config() -> bool:
     """Validate that all required configuration is present"""
     required_vars = [
