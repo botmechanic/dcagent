@@ -1,11 +1,15 @@
 import time
-from typing import List, Optional
 import logging
+from typing import List, Optional
+from coinbase_agentkit import AgentKit
 
 from dcagent.config import validate_config
 from dcagent.strategies.base_strategy import BaseStrategy
 from dcagent.strategies.dca_strategy import DCAStrategy
 from dcagent.strategies.dip_strategy import DipBuyingStrategy
+from dcagent.strategies.yield_strategy import YieldOptimizationStrategy
+from dcagent.utils.agent_kit import initialize_agent_kit
+from dcagent.action_providers.aerodrome_provider import aerodrome_action_provider
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +22,7 @@ class DCAgent:
         self.strategies: List[BaseStrategy] = []
         self.running = False
         self.initialized = False
+        self.agent_kit: Optional[AgentKit] = None
     
     def initialize(self) -> bool:
         """Initialize the agent and its strategies"""
@@ -28,52 +33,27 @@ class DCAgent:
         
         logger.info("Initializing DCAgent...")
         
+        # Initialize AgentKit with Base integration
+        try:
+            self.agent_kit = initialize_agent_kit()
+            
+            # Add custom Aerodrome action provider
+            self.agent_kit.add_action_provider(aerodrome_action_provider())
+            
+            logger.info("AgentKit initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize AgentKit: {e}")
+            return False
+        
         # Initialize strategies
         self.strategies = [
-            DCAStrategy(),
-            DipBuyingStrategy()
+            DCAStrategy(self.agent_kit),
+            DipBuyingStrategy(self.agent_kit),
+            YieldOptimizationStrategy(self.agent_kit)
         ]
         
         self.initialized = True
         logger.info("DCAgent initialization complete")
         return True
     
-    def add_strategy(self, strategy: BaseStrategy) -> None:
-        """Add a strategy to the agent"""
-        self.strategies.append(strategy)
-        logger.info(f"Added strategy: {strategy.name}")
-    
-    def run(self, run_once: bool = False) -> None:
-        """Run the agent, executing all strategies"""
-        if not self.initialized:
-            if not self.initialize():
-                logger.error("Failed to initialize agent")
-                return
-        
-        self.running = True
-        logger.info("DCAgent is running...")
-        
-        try:
-            while self.running:
-                for strategy in self.strategies:
-                    if strategy.should_execute():
-                        logger.info(f"Executing strategy: {strategy.name}")
-                        try:
-                            strategy.execute()
-                        except Exception as e:
-                            logger.error(f"Error executing strategy {strategy.name}: {e}")
-                
-                if run_once:
-                    self.running = False
-                    break
-                    
-                time.sleep(60)  # Check strategies every minute
-        
-        except KeyboardInterrupt:
-            logger.info("Received shutdown signal")
-            self.stop()
-    
-    def stop(self) -> None:
-        """Stop the agent"""
-        self.running = False
-        logger.info("DCAgent stopped")
+    # Rest of the implementation...
