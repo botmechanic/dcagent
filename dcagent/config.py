@@ -27,8 +27,8 @@ PRIVATE_KEY = os.getenv("PRIVATE_KEY")
 
 # Aerodrome Configuration
 AERODROME_ROUTER = os.getenv("AERODROME_ROUTER", "0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43")
-CBBTC_POOL = os.getenv("CBBTC_POOL", "")  # Need to find the actual pool
-CBBTC_GAUGE = os.getenv("CBBTC_GAUGE", "")  # Need to find the actual gauge
+CBBTC_POOL = os.getenv("CBBTC_POOL", "0x4e962BB3889Bf030368F56810A9c96B83CB3E778")  # Need to find the actual pool
+CBBTC_GAUGE = os.getenv("CBBTC_GAUGE", "0x6399ed6725cC163D019aA64FF55b22149D7179A8")  # Need to find the actual gauge
 ENABLE_YIELD_OPTIMIZATION = os.getenv("ENABLE_YIELD_OPTIMIZATION", "true").lower() == "true"
 REINVEST_YIELD = os.getenv("REINVEST_YIELD", "true").lower() == "true"
 

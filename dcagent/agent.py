@@ -47,13 +47,37 @@ class DCAgent:
         
         # Initialize strategies
         self.strategies = [
-            DCAStrategy(self.agent_kit),
-            DipBuyingStrategy(self.agent_kit),
-            YieldOptimizationStrategy(self.agent_kit)
+            DCAStrategy(),  # Remove the agent_kit parameter
+            DipBuyingStrategy(),
+            YieldOptimizationStrategy()
         ]
         
         self.initialized = True
         logger.info("DCAgent initialization complete")
         return True
     
-    # Rest of the implementation...
+    def run(self):
+        """Run the agent main loop"""
+        if not self.initialized and not self.initialize():
+            logger.error("Failed to initialize agent")
+            return
+        
+        self.running = True
+        logger.info("DCAgent started")
+        
+        try:
+            while self.running:
+                for strategy in self.strategies:
+                    if strategy.should_execute():
+                        strategy.execute()
+                
+                # Sleep to avoid excessive CPU usage
+                time.sleep(60)  # Check every minute
+        
+        except KeyboardInterrupt:
+            logger.info("Agent stopped by user")
+        except Exception as e:
+            logger.error(f"Error in agent main loop: {e}")
+        finally:
+            self.running = False
+            logger.info("DCAgent stopped")

@@ -2,13 +2,39 @@ import logging
 import time
 from datetime import datetime, timedelta
 from typing import Optional
+import json
+import os
 
-from dcagent.config import DCA_AMOUNT, DCA_INTERVAL, CBBTC_CONTRACT_ADDRESS, USDC_CONTRACT_ADDRESS
+from dcagent.config import (
+    DCA_AMOUNT, 
+    DCA_INTERVAL, 
+    CBBTC_CONTRACT_ADDRESS, 
+    USDC_CONTRACT_ADDRESS,
+    AERODROME_ROUTER
+)
 from dcagent.strategies.base_strategy import BaseStrategy
-from dcagent.utils.blockchain import get_account, get_token_balance, approve_token_spending
+from dcagent.utils.blockchain import (
+    get_account, 
+    get_token_balance, 
+    approve_token_spending, 
+    get_contract,
+    web3
+)
 from dcagent.utils.pyth_utils import get_btc_price
 
 logger = logging.getLogger(__name__)
+
+# Get directory of this file to construct paths correctly
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Load Router ABI
+def load_abi(filename):
+    """Load ABI from a JSON file"""
+    abi_path = os.path.join(BASE_DIR, 'abis', filename)
+    with open(abi_path, 'r') as f:
+        return json.load(f)
+
+ROUTER_ABI = load_abi('router.json')
 
 class DCAStrategy(BaseStrategy):
     """
@@ -71,13 +97,73 @@ class DCAStrategy(BaseStrategy):
                 logger.error(f"Insufficient USDC balance. Have: ${usdc_balance:.2f}, Need: ${DCA_AMOUNT:.2f}")
                 return False
             
-            # TODO: Implement actual swap from USDC to cbBTC
-            # This would involve:
-            # 1. Approving the swap contract to spend USDC
-            # 2. Executing the swap via a DEX on Base
+            # Implement actual swap from USDC to cbBTC
             
-            # For now, we'll just log that we would execute the swap
-            logger.info(f"Would swap ${DCA_AMOUNT:.2f} USDC for {btc_amount:.8f} BTC (${btc_price:,.2f}/BTC)")
+            # 1. Convert amounts to wei considering token decimals
+            usdc_decimals = 6  # USDC has 6 decimals
+            usdc_amount_wei = int(DCA_AMOUNT * (10**usdc_decimals))
+            
+            # 2. Calculate minimum amount out with 0.5% slippage
+            slippage = 0.005  # 0.5%
+            min_btc_amount = btc_amount * (1 - slippage)
+            cbbtc_decimals = 18  # cbBTC has 18 decimals (like most ERC20 tokens)
+            min_btc_amount_wei = int(min_btc_amount * (10**cbbtc_decimals))
+            
+            # 3. Approve the router to spend USDC
+            logger.info(f"Approving Aerodrome Router to spend {DCA_AMOUNT} USDC")
+            approve_receipt = approve_token_spending(
+                USDC_CONTRACT_ADDRESS, 
+                AERODROME_ROUTER,
+                DCA_AMOUNT
+            )
+            
+            if not approve_receipt or approve_receipt.status != 1:
+                logger.error("Failed to approve USDC spending")
+                return False
+            
+            logger.info(f"USDC spending approved. Transaction hash: {approve_receipt.transactionHash.hex()}")
+            
+            # 4. Execute the swap through Aerodrome Router
+            router_contract = get_contract(AERODROME_ROUTER, ROUTER_ABI)
+            
+            # Create swap transaction
+            # Set deadline to 10 minutes from now
+            deadline = int(time.time() + 600)
+            
+            logger.info(f"Executing swap: {DCA_AMOUNT} USDC -> ~{btc_amount:.8f} cbBTC")
+            
+            swap_tx = router_contract.functions.swapExactTokensForTokens(
+                usdc_amount_wei,                          # amountIn
+                min_btc_amount_wei,                       # amountOutMin
+                USDC_CONTRACT_ADDRESS,                    # tokenIn
+                CBBTC_CONTRACT_ADDRESS,                   # tokenOut
+                False,                                    # stable - assuming this is a volatile pair
+                account.address,                          # to
+                deadline                                  # deadline
+            ).build_transaction({
+                'from': account.address,
+                'nonce': web3.eth.get_transaction_count(account.address),
+                'gas': 300000,  # Set appropriate gas limit
+                'gasPrice': web3.eth.gas_price,
+            })
+            
+            # Sign and send transaction
+            signed_tx = account.sign_transaction(swap_tx)
+            tx_hash = web3.eth.send_raw_transaction(signed_tx.rawTransaction)
+            
+            # Wait for transaction receipt
+            logger.info(f"Swap transaction sent. Waiting for confirmation...")
+            receipt = web3.eth.wait_for_transaction_receipt(tx_hash)
+            
+            if receipt.status != 1:
+                logger.error(f"Swap transaction failed. Transaction hash: {tx_hash.hex()}")
+                return False
+            
+            logger.info(f"Swap successful! Transaction hash: {tx_hash.hex()}")
+            
+            # Get new cbBTC balance to confirm the swap worked
+            new_cbbtc_balance = get_token_balance(CBBTC_CONTRACT_ADDRESS, account.address)
+            logger.info(f"New cbBTC balance: {new_cbbtc_balance}")
             
             # Update the execution time for next run
             self.last_execution = datetime.now()
