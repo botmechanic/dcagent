@@ -14,42 +14,66 @@ DCAgent is an AI-powered autonomous agent that helps users stack Bitcoin through
 ## System Architecture
 
 ```mermaid
-graph TD
-    User[User] --> Dashboard[Streamlit Dashboard]
-    Dashboard --> Agent[DCAgent]
-    
+flowchart TD
     subgraph "DCAgent Core"
-        Agent --> Strategies[Strategy Manager]
-        Strategies --> DCA[DCA Strategy]
-        Strategies --> Dip[Dip Strategy]
-        Strategies --> Yield[Yield Strategy]
+        Agent[DCAgent]
+        Agent --> |executes| Strategies
+        Agent --> |uses| AgentKit[AgentKit Integration]
         
-        DCA --> AI[Claude AI Advisor]
-        Dip --> AI
-        Yield --> AI
+        subgraph "Strategies"
+            DCA[DCA Strategy]
+            Dip[Dip Buying Strategy]
+            Yield[Yield Optimization]
+        end
+    end
+
+    subgraph "Blockchain Interaction"
+        AgentKit --> |interacts with| Base[Base L2]
+        ActionProviders[Action Providers] --> |perform actions on| Base
         
-        AI --> Market[Market Analysis]
-        AI --> Gas[Gas Optimization]
-        AI --> Insight[Strategy Insights]
+        subgraph "Protocols"
+            Aerodrome[Aerodrome Finance]
+        end
+        
+        Base --> |hosts| Protocols
     end
     
-    subgraph "Data Sources"
-        Agent --> Price[Price Feeds]
-        Price --> Coinbase[Coinbase API]
-        Price --> Pyth[Pyth Oracle]
-        Agent --> Block[Blockchain Data]
+    subgraph "AI Integration"
+        Claude[Claude AI Advisor]
+        Claude --> |analyzes market| Pyth[Pyth Price Feeds]
+        Claude --> |optimizes| GasOptimizer[Gas Price Optimizer]
+        Claude --> |generates| Insights[Trading Insights]
+        
+        DCA --> |consults| Claude
+        Dip --> |consults| Claude
     end
     
-    subgraph "Execution Layer"
-        DCA --> Swap[Token Swaps]
-        Dip --> Swap
-        Yield --> Pool[LP Management]
-        Swap --> Router[Aerodrome Router]
-        Pool --> Gauge[Aerodrome Gauge]
+    subgraph "Utils"
+        Blockchain[Blockchain Utils]
+        AerodromeUtils[Aerodrome Utils]
+        LoggingUtils[Event Logging]
     end
     
-    Router --> Base[(Base L2)]
-    Gauge --> Base
+    Strategies --> |use| Utils
+    
+    AgentKit --> |manages| ActionProviders
+    ActionProviders --> |include| AerodromeProvider[Aerodrome Provider]
+    AerodromeProvider --> |calls| AerodromeUtils
+    
+    Blockchain --> |connects to| Base
+    AerodromeUtils --> |interacts with| Aerodrome
+    
+    classDef primary fill:#3178c6,stroke:#2b6cb0,color:#fff
+    classDef strategy fill:#38a169,stroke:#2f855a,color:#fff
+    classDef ai fill:#e53e3e,stroke:#c53030,color:#fff
+    classDef utils fill:#ecc94b,stroke:#d69e2e,color:#000
+    classDef blockchain fill:#805ad5,stroke:#6b46c1,color:#fff
+    
+    class Agent,AgentKit primary
+    class DCA,Dip,Yield strategy
+    class Claude,GasOptimizer,Insights ai
+    class Blockchain,AerodromeUtils,LoggingUtils utils
+    class Base,ActionProviders,Protocols,Aerodrome,AerodromeProvider blockchain
 ```
 
 ## Tech Stack
