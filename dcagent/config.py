@@ -32,6 +32,10 @@ CBBTC_GAUGE = os.getenv("CBBTC_GAUGE", "0x6399ed6725cC163D019aA64FF55b22149D7179
 ENABLE_YIELD_OPTIMIZATION = os.getenv("ENABLE_YIELD_OPTIMIZATION", "true").lower() == "true"
 REINVEST_YIELD = os.getenv("REINVEST_YIELD", "true").lower() == "true"
 
+# AI Configuration
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+ENABLE_AI_ADVISOR = os.getenv("ENABLE_AI_ADVISOR", "true").lower() == "true"
+
 def validate_config() -> bool:
     """Validate that all required configuration is present"""
     required_vars = [
@@ -43,5 +47,9 @@ def validate_config() -> bool:
         if not globals().get(var):
             print(f"Missing required configuration: {var}")
             return False
+    
+    # Warn if AI advisor is enabled but API key is missing
+    if ENABLE_AI_ADVISOR and not ANTHROPIC_API_KEY:
+        print("WARNING: AI advisor is enabled but ANTHROPIC_API_KEY is missing. AI features will not work.")
     
     return True

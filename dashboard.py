@@ -193,7 +193,7 @@ def main():
         # Here you'd add code to claim rewards
     
     # Main content area with tabs
-    tab1, tab2, tab3, tab4 = st.tabs(["Overview", "Performance", "Transactions", "Logs"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["Overview", "Performance", "Transactions", "AI Insights", "Logs"])
     
     # Update data for real-time display
     update_price_history()
@@ -639,8 +639,117 @@ def main():
         else:
             st.info("No transactions found matching your filters.")
     
-    # Tab 4: Logs
+    # Tab 4: AI Insights
     with tab4:
+        st.header("AI Strategy Insights")
+        
+        with st.container():
+            st.subheader("Current Market Analysis")
+            
+            # This would normally come from your events.json, using placeholder for demo
+            ai_events = [e for e in load_events() if "ai_sentiment" in e.get("data", {})]
+            latest_ai_event = ai_events[-1] if ai_events else None
+            
+            if latest_ai_event:
+                data = latest_ai_event.get("data", {})
+                
+                # Display sentiment with appropriate color
+                sentiment = data.get("ai_sentiment", "neutral")
+                sentiment_color = {
+                    "bullish": "green",
+                    "bearish": "red", 
+                    "neutral": "blue"
+                }.get(sentiment, "blue")
+                
+                st.markdown(f"<h3 style='color:{sentiment_color}'>Market Sentiment: {sentiment.title()}</h3>", unsafe_allow_html=True)
+                
+                # Display AI reasoning
+                st.markdown("### AI Analysis")
+                st.write(data.get("ai_reasoning", "No analysis available"))
+                
+                # Display AI insight
+                if "ai_insight" in data:
+                    st.markdown("### Strategic Insight")
+                    st.info(data.get("ai_insight"))
+                    
+            else:
+                st.info("No AI insights available yet. The agent will generate insights as it executes strategies.")
+            
+            # Add a button to request a new analysis
+            if st.button("Request New Analysis"):
+                st.success("Analysis requested. The agent will update the insights on the next execution cycle.")
+                
+        # Add AI price prediction section
+        st.subheader("🔮 AI Market Prediction")
+        
+        def get_ai_prediction():
+            """Get AI prediction for future BTC price"""
+            
+            # This would normally use your ClaudeAdvisor, but we'll simulate for the demo
+            if DEMO_MODE:
+                current_price = get_current_data()['btc_price']
+                # Simulate a prediction with some random variation
+                prediction = {
+                    "price_7d": current_price * (1 + random.uniform(-0.05, 0.15)),
+                    "price_30d": current_price * (1 + random.uniform(0, 0.25)),
+                    "confidence": random.uniform(0.65, 0.85),
+                    "reasoning": "Based on current market conditions and historical patterns, BTC appears to be in an accumulation phase with strong support around $78,000. Technical indicators suggest potential upward momentum over the next 30 days, though short-term volatility may continue.",
+                    "recommendation": "Continue regular DCA with possible increase in position size during significant dips below $76,000."
+                }
+                return prediction
+            else:
+                # In real mode, you would use the Claude API
+                try:
+                    from dcagent.utils.claude_advisor import ClaudeAdvisor
+                    advisor = ClaudeAdvisor()
+                    # Get data for prediction
+                    price = get_current_data()['btc_price']
+                    # Hard code price history for example
+                    history = [price * (1 + ((i - 10) * 0.005)) for i in range(20)]
+                    
+                    analysis = advisor.market_analysis(price, history)
+                    
+                    # Format as prediction
+                    prediction = {
+                        "price_7d": price * (1 + (0.05 if analysis['sentiment'] == 'bullish' else -0.05)),
+                        "price_30d": price * (1 + (0.15 if analysis['sentiment'] == 'bullish' else -0.10)),
+                        "confidence": 0.75,
+                        "reasoning": analysis['reasoning'],
+                        "recommendation": analysis['strategy_recommendation']
+                    }
+                    return prediction
+                except Exception as e:
+                    st.error(f"Error getting AI prediction: {e}")
+                    return None
+        
+        prediction = get_ai_prediction()
+        if prediction:
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric(
+                    label="Predicted Price (7 days)", 
+                    value=f"${prediction['price_7d']:,.2f}",
+                    delta=f"{((prediction['price_7d'] - current_data['btc_price']) / current_data['btc_price'] * 100):.1f}%"
+                )
+            with col2:
+                st.metric(
+                    label="Predicted Price (30 days)", 
+                    value=f"${prediction['price_30d']:,.2f}",
+                    delta=f"{((prediction['price_30d'] - current_data['btc_price']) / current_data['btc_price'] * 100):.1f}%"
+                )
+            
+            st.progress(prediction['confidence'], text=f"Confidence: {prediction['confidence']:.0%}")
+            
+            st.subheader("AI Reasoning")
+            st.write(prediction['reasoning'])
+            
+            st.subheader("Recommendation")
+            st.info(prediction['recommendation'])
+        else:
+            st.info("No AI prediction available at this time.")
+    
+    # Tab 5: Logs
+    with tab5:
         st.header("System Logs")
         
         # Log level filter

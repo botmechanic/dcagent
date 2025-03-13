@@ -1,7 +1,7 @@
 import logging
 import time
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, List, Dict, Any
 import json
 import os
 
@@ -23,6 +23,8 @@ from dcagent.utils.blockchain import (
 )
 from dcagent.utils.pyth_utils import get_btc_price
 from dcagent.utils.logging_utils import log_event, log_transaction
+from dcagent.utils.claude_advisor import ClaudeAdvisor
+from dcagent.utils.gas_utils import GasOptimizer
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +40,55 @@ def load_abi(filename):
 
 ROUTER_ABI = load_abi('router.json')
 
+def get_recent_transactions(count: int, tx_type: str = None) -> List[Dict[str, Any]]:
+    """
+    Get recent transactions from events.json for AI analysis
+    
+    Args:
+        count: Number of transactions to retrieve
+        tx_type: Optional filter for transaction type
+        
+    Returns:
+        List of recent transaction dictionaries
+    """
+    try:
+        events_file = os.path.join(os.path.dirname(BASE_DIR), "events.json")
+        if not os.path.exists(events_file):
+            return []
+            
+        with open(events_file, 'r') as f:
+            events = json.load(f)
+        
+        # Filter for transaction events
+        tx_events = [e for e in events if e.get("type") == "transaction"]
+        
+        # Additional filter by tx_type if specified
+        if tx_type:
+            tx_events = [e for e in tx_events if e.get("data", {}).get("type") == tx_type]
+            
+        # Get the most recent ones
+        recent_txs = tx_events[-count:] if tx_events else []
+        
+        # Format them for AI consumption
+        formatted_txs = []
+        for tx in recent_txs:
+            data = tx.get("data", {})
+            details = data.get("details", {})
+            formatted_txs.append({
+                "timestamp": tx.get("timestamp", ""),
+                "type": data.get("type", "Unknown"),
+                "amount": details.get("amount", 0),
+                "token": details.get("token", ""),
+                "btc_price": details.get("btc_price", 0),
+                "usdc_amount": details.get("usdc_amount", 0),
+            })
+            
+        return formatted_txs
+        
+    except Exception as e:
+        logger.error(f"Error getting recent transactions: {e}")
+        return []
+
 class DCAStrategy(BaseStrategy):
     """
     Dollar-Cost Averaging strategy for buying BTC at regular intervals
@@ -46,6 +97,9 @@ class DCAStrategy(BaseStrategy):
     def __init__(self):
         super().__init__("DCA")
         self.setup_next_execution()
+        self.claude_advisor = ClaudeAdvisor()  # Initialize Claude Advisor
+        self.gas_optimizer = GasOptimizer()    # Initialize Gas Optimizer
+        self.price_history = []                # Track price history
     
     def setup_next_execution(self):
         """Set up the next execution time based on the DCA interval"""
@@ -75,8 +129,8 @@ class DCAStrategy(BaseStrategy):
         return now >= self.next_execution
     
     def execute(self) -> bool:
-        """Execute the DCA strategy by buying BTC"""
-        logger.info("Executing DCA Strategy")
+        """Execute the DCA strategy by buying BTC with AI advisor"""
+        logger.info("Executing AI-enhanced DCA Strategy")
         
         try:
             # Get the current BTC price
@@ -85,11 +139,44 @@ class DCAStrategy(BaseStrategy):
                 logger.error("Failed to get BTC price, aborting DCA execution")
                 return False
             
+            # Update price history
+            self.price_history.append(btc_price)
+            if len(self.price_history) > 24:  # Keep 24 hours of history
+                self.price_history = self.price_history[-24:]
+            
             logger.info(f"Current BTC price: ${btc_price:,.2f}")
             
-            # Calculate the amount of BTC to buy
+            # Get market analysis from Claude
+            analysis = self.claude_advisor.market_analysis(btc_price, self.price_history)
+            logger.info(f"AI Market Analysis: {analysis['sentiment']} sentiment, buy opportunity: {analysis['buy_opportunity']}")
+            
+            # Generate insight for logging
+            insight = self.claude_advisor.generate_insight(
+                "DCA", 
+                get_recent_transactions(5, "DCA Buy"),
+                {"current_price": btc_price, "price_history": self.price_history[-10:]}
+            )
+            logger.info(f"AI Insight: {insight}")
+            
+            # Decide whether to proceed with DCA based on AI recommendation
+            if not analysis['buy_opportunity']:
+                logger.info(f"AI advises skipping this DCA cycle: {analysis['reasoning']}")
+                # Log the skipped event with reasoning
+                log_event("dca_execution", {
+                    "strategy": "dca",
+                    "status": "skipped",
+                    "btc_price": btc_price,
+                    "ai_sentiment": analysis['sentiment'],
+                    "reasoning": analysis['reasoning']
+                })
+                
+                # Reschedule for next day instead of usual interval
+                self.next_execution = datetime.now() + timedelta(days=1)
+                return True
+                
+            # AI recommends proceeding with buy - calculate the amount of BTC to buy
             btc_amount = DCA_AMOUNT / btc_price
-            logger.info(f"Attempting to buy {btc_amount:.8f} BTC (${DCA_AMOUNT:.2f})")
+            logger.info(f"AI recommends proceeding with buying {btc_amount:.8f} BTC (${DCA_AMOUNT:.2f})")
             
             # Check if we have enough USDC
             account = get_account()
@@ -105,11 +192,13 @@ class DCAStrategy(BaseStrategy):
             usdc_decimals = 6  # USDC has 6 decimals
             usdc_amount_wei = int(DCA_AMOUNT * (10**usdc_decimals))
             
-            # 2. Calculate minimum amount out with 0.5% slippage
-            slippage = 0.005  # 0.5%
+            # 2. Calculate minimum amount out with AI-recommended slippage
+            slippage = analysis["slippage_recommendation"] / 100  # Convert from percentage
             min_btc_amount = btc_amount * (1 - slippage)
             cbbtc_decimals = 18  # cbBTC has 18 decimals (like most ERC20 tokens)
             min_btc_amount_wei = int(min_btc_amount * (10**cbbtc_decimals))
+            
+            logger.info(f"Using AI-recommended slippage: {slippage*100:.2f}%")
             
             # 3. Approve the router to spend USDC
             logger.info(f"Approving Aerodrome Router to spend {DCA_AMOUNT} USDC")
@@ -151,14 +240,17 @@ class DCAStrategy(BaseStrategy):
                 deadline                                  # deadline
             )
             
-            logger.info(f"Executing swap with retry: {DCA_AMOUNT} USDC -> ~{btc_amount:.8f} cbBTC")
+            logger.info(f"Executing AI-enhanced swap with retry: {DCA_AMOUNT} USDC -> ~{btc_amount:.8f} cbBTC")
             
-            # Use our retry-enabled transaction sender
+            # Use our retry-enabled transaction sender with AI gas optimization
+            optimized_gas_price = self.gas_optimizer.get_optimized_gas_price("dca", DCA_AMOUNT)
+            
             receipt = send_contract_transaction(
                 contract_function=swap_function,
                 account=account,
                 gas_limit=300000,  # Set appropriate gas limit
-                max_retries=3
+                max_retries=3,
+                gas_price=optimized_gas_price
             )
             
             if not receipt or receipt.status != 1:
@@ -182,27 +274,32 @@ class DCAStrategy(BaseStrategy):
                     "strategy": "dca",
                     "usdc_amount": DCA_AMOUNT,
                     "btc_price": btc_price,
-                    "timestamp": datetime.now().isoformat()
+                    "timestamp": datetime.now().isoformat(),
+                    "ai_sentiment": analysis['sentiment'],
+                    "ai_reasoning": analysis['reasoning']
                 }
             )
             
             # Update the execution time for next run
             self.last_execution = datetime.now()
             self.setup_next_execution()
-            logger.info(f"Next DCA execution scheduled for: {self.next_execution}")
+            logger.info(f"Next AI-enhanced DCA execution scheduled for: {self.next_execution}")
             
-            # Log the completion event
+            # Log the completion event with AI insights
             log_event("dca_execution", {
                 "strategy": "dca",
                 "amount": DCA_AMOUNT,
                 "btc_price": btc_price,
                 "btc_amount": btc_amount,
                 "next_execution": self.next_execution.isoformat(),
-                "status": "success"
+                "status": "success",
+                "ai_sentiment": analysis['sentiment'],
+                "ai_insight": insight,
+                "ai_strategy_recommendation": analysis['strategy_recommendation']
             })
             
             return True
             
         except Exception as e:
-            logger.error(f"Error executing DCA strategy: {e}")
+            logger.error(f"Error executing AI-enhanced DCA strategy: {e}")
             return False

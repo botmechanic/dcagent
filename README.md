@@ -7,16 +7,19 @@ DCAgent is an AI-powered autonomous agent that helps users stack Bitcoin through
 - **Automated DCA**: Schedule regular BTC purchases at fixed intervals
 - **Intelligent Dip Buying**: Automatically detect and buy price dips
 - **Gas Optimization**: AI-powered transaction timing to minimize gas costs
+- **Claude Integration**: Intelligent decision-making powered by Claude's AI capabilities
 - **Yield Maximization**: Automatically stake and earn yield on your BTC holdings
 - **Analytics Dashboard**: Track performance and get AI-generated insights
 
 ## Tech Stack
 
 - Python 3.10+
+- Anthropic Claude for intelligent decision-making
 - AgentKit for autonomous agent capabilities
 - Base blockchain for low-cost transactions
 - cbBTC as the trusted BTC wrapper token
 - Web3.py for blockchain interactions
+- Coinbase and Pyth price feeds for reliable BTC pricing
 
 ## Getting Started
 
@@ -45,6 +48,8 @@ DCAgent is an AI-powered autonomous agent that helps users stack Bitcoin through
    DCA_INTERVAL=weekly
    ENABLE_DIP_BUYING=true
    ENABLE_YIELD_OPTIMIZATION=true
+   ANTHROPIC_API_KEY=your_anthropic_api_key_here
+   ENABLE_AI_ADVISOR=true
    ```
 
 ### Running DCAgent
@@ -71,6 +76,13 @@ DEMO_MODE=true poetry run streamlit run dashboard.py
 
 This will run the dashboard with simulated data, perfect for presentations.
 
+#### Run AI Demo
+To showcase Claude AI integration capabilities:
+```bash
+export ANTHROPIC_API_KEY=your_anthropic_api_key_here
+poetry run ./run_ai_demo.sh
+```
+
 The dashboard will be available at http://localhost:8501
 
 ## Dashboard Features
@@ -80,9 +92,20 @@ The DCAgent dashboard provides a comprehensive visualization of your DCA agent's
 - **Overview**: See your current balances, BTC price, and portfolio growth
 - **Performance**: Track DCA and dip buying performance with detailed metrics
 - **Transactions**: Monitor all transactions with filtering by type and date
+- **AI Insights**: View Claude's market analysis, predictions, and recommendations
 - **Logs**: View system logs with filtering by log level
 
 The dashboard also allows you to manually trigger actions like DCA execution and reward claiming.
+
+## AI Capabilities
+
+DCAgent leverages Claude AI for intelligent decision-making:
+
+- **Market Analysis**: Claude analyzes BTC market trends to determine optimal buying times
+- **Transaction Optimization**: AI-powered gas price and slippage recommendations
+- **Price Predictions**: Short and medium-term BTC price forecasts
+- **Strategy Adjustments**: Dynamic strategy modifications based on market conditions
+- **Natural Language Insights**: Human-readable analysis of your portfolio performance
 
 ## Development Status
 
