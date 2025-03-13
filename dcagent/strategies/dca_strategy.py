@@ -22,6 +22,7 @@ from dcagent.utils.blockchain import (
     send_contract_transaction
 )
 from dcagent.utils.pyth_utils import get_btc_price
+from dcagent.utils.logging_utils import log_event, log_transaction
 
 logger = logging.getLogger(__name__)
 
@@ -164,16 +165,41 @@ class DCAStrategy(BaseStrategy):
                 logger.error(f"Swap transaction failed. Receipt: {receipt}")
                 return False
             
-            logger.info(f"Swap successful! Transaction hash: {receipt.transactionHash.hex()}")
+            tx_hash = receipt.transactionHash.hex()
+            logger.info(f"Swap successful! Transaction hash: {tx_hash}")
             
             # Get new cbBTC balance to confirm the swap worked
             new_cbbtc_balance = get_token_balance(CBBTC_CONTRACT_ADDRESS, account.address)
             logger.info(f"New cbBTC balance: {new_cbbtc_balance}")
             
+            # Log the transaction for the dashboard
+            log_transaction(
+                tx_type="DCA Buy",
+                tx_hash=tx_hash,
+                amount=btc_amount,
+                token="cbBTC",
+                additional_data={
+                    "strategy": "dca",
+                    "usdc_amount": DCA_AMOUNT,
+                    "btc_price": btc_price,
+                    "timestamp": datetime.now().isoformat()
+                }
+            )
+            
             # Update the execution time for next run
             self.last_execution = datetime.now()
             self.setup_next_execution()
             logger.info(f"Next DCA execution scheduled for: {self.next_execution}")
+            
+            # Log the completion event
+            log_event("dca_execution", {
+                "strategy": "dca",
+                "amount": DCA_AMOUNT,
+                "btc_price": btc_price,
+                "btc_amount": btc_amount,
+                "next_execution": self.next_execution.isoformat(),
+                "status": "success"
+            })
             
             return True
             

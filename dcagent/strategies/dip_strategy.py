@@ -23,6 +23,7 @@ from dcagent.utils.blockchain import (
     send_contract_transaction
 )
 from dcagent.utils.pyth_utils import get_btc_price
+from dcagent.utils.logging_utils import log_event, log_transaction
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +79,22 @@ class DipBuyingStrategy(BaseStrategy):
         
         if is_dip:
             logger.info(f"BTC price dip detected! {percentage_drop:.2f}% below 6-hour average")
+            
+            # Check if we're in the cooldown period
+            now = datetime.now()
+            in_cooldown = self.last_buy and (now - self.last_buy) < self.minimum_buy_interval
+            
+            # Log the dip detection event
+            log_event("dip_detected", {
+                "strategy": "dip",
+                "btc_price": current_price,
+                "moving_avg": moving_avg,
+                "dip_percentage": percentage_drop,
+                "threshold": DIP_THRESHOLD,
+                "status": "detected_only" if in_cooldown else "ready_to_buy",
+                "cooldown": in_cooldown,
+                "next_available": (self.last_buy + self.minimum_buy_interval).isoformat() if in_cooldown else None
+            })
         
         return is_dip
     
@@ -196,16 +213,43 @@ class DipBuyingStrategy(BaseStrategy):
                 logger.error(f"Dip buy swap transaction failed. Receipt: {receipt}")
                 return False
             
-            logger.info(f"Dip buy swap successful! Transaction hash: {receipt.transactionHash.hex()}")
+            tx_hash = receipt.transactionHash.hex()
+            logger.info(f"Dip buy swap successful! Transaction hash: {tx_hash}")
             
             # Get new cbBTC balance to confirm the swap worked
             new_cbbtc_balance = get_token_balance(CBBTC_CONTRACT_ADDRESS, account.address)
             logger.info(f"New cbBTC balance after dip buy: {new_cbbtc_balance}")
             
+            # Log the transaction for the dashboard
+            log_transaction(
+                tx_type="Dip Buy",
+                tx_hash=tx_hash,
+                amount=btc_amount,
+                token="cbBTC",
+                additional_data={
+                    "strategy": "dip",
+                    "usdc_amount": DCA_AMOUNT,
+                    "btc_price": btc_price,
+                    "dip_percentage": percentage_drop,
+                    "timestamp": datetime.now().isoformat()
+                }
+            )
+            
             # Record this buy
             self.last_buy = datetime.now()
             self.last_execution = self.last_buy
             logger.info(f"Dip buying recorded. Next dip buy will be available after: {self.last_buy + self.minimum_buy_interval}")
+            
+            # Log the dip event
+            log_event("dip_detected", {
+                "strategy": "dip",
+                "amount": DCA_AMOUNT,
+                "btc_price": btc_price,
+                "btc_amount": btc_amount,
+                "dip_percentage": percentage_drop,
+                "next_available": (self.last_buy + self.minimum_buy_interval).isoformat(),
+                "status": "bought"
+            })
             
             return True
             
