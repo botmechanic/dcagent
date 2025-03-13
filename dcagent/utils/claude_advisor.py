@@ -16,6 +16,11 @@ class ClaudeAdvisor:
         api_key = os.getenv("ANTHROPIC_API_KEY")
         if not api_key:
             logger.error("ANTHROPIC_API_KEY not found in environment variables")
+            print("\n" + "="*80)
+            print("ERROR: ANTHROPIC_API_KEY environment variable is not set.")
+            print("Please set it before running this script:")
+            print("export ANTHROPIC_API_KEY=your_api_key_here")
+            print("="*80 + "\n")
             raise ValueError("ANTHROPIC_API_KEY is required")
             
         self.client = anthropic.Anthropic(api_key=api_key)

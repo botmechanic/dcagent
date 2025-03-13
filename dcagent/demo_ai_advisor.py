@@ -25,8 +25,19 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Import after logging setup to capture all logs
-from dcagent.utils.claude_advisor import ClaudeAdvisor
-from dcagent.utils.pyth_utils import get_btc_price
+try:
+    import anthropic
+except ImportError:
+    print("ERROR: The 'anthropic' package is not installed.")
+    print("Please install it with: pip install anthropic")
+    sys.exit(1)
+
+try:
+    from dcagent.utils.claude_advisor import ClaudeAdvisor
+    from dcagent.utils.pyth_utils import get_btc_price
+except ImportError as e:
+    print(f"ERROR: Failed to import required modules: {e}")
+    sys.exit(1)
 
 def main():
     """Demo script to show Claude AI integration"""
