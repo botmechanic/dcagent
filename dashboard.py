@@ -6,17 +6,36 @@ from datetime import datetime, timedelta
 import json
 import os
 import threading
+import sys
 
-from dcagent.config import (
-    DCA_AMOUNT, 
-    DCA_INTERVAL, 
-    ENABLE_DIP_BUYING, 
-    ENABLE_YIELD_OPTIMIZATION
-)
-from dcagent.utils.pyth_utils import get_btc_price, get_price_with_confidence
-from dcagent.utils.blockchain import get_account, get_token_balance
-from dcagent.utils.aerodrome import get_earned_rewards, get_staked_lp_balance, get_pool_statistics
-from dcagent.config import CBBTC_CONTRACT_ADDRESS, USDC_CONTRACT_ADDRESS
+# Flag to run in demo mode (without backend agent dependencies)
+DEMO_MODE = os.environ.get("DEMO_MODE", "false").lower() == "true"
+
+try:
+    from dcagent.config import (
+        DCA_AMOUNT, 
+        DCA_INTERVAL, 
+        ENABLE_DIP_BUYING, 
+        ENABLE_YIELD_OPTIMIZATION,
+        CBBTC_CONTRACT_ADDRESS, 
+        USDC_CONTRACT_ADDRESS
+    )
+    if not DEMO_MODE:
+        from dcagent.utils.pyth_utils import get_btc_price, get_price_with_confidence
+        from dcagent.utils.blockchain import get_account, get_token_balance
+        from dcagent.utils.aerodrome import get_earned_rewards, get_staked_lp_balance, get_pool_statistics
+except ImportError as e:
+    # If we can't import the modules, assume demo mode
+    DEMO_MODE = True
+    print(f"Running in demo mode due to import error: {e}")
+    
+    # Set default values for demo mode
+    DCA_AMOUNT = 50
+    DCA_INTERVAL = "weekly"
+    ENABLE_DIP_BUYING = True
+    ENABLE_YIELD_OPTIMIZATION = True
+    CBBTC_CONTRACT_ADDRESS = "0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf"
+    USDC_CONTRACT_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
 
 # Initialize global variables for storing state
 if 'price_history' not in st.session_state:
@@ -43,19 +62,39 @@ class StreamlitLogHandler:
             self.logs = self.logs[-100:]
         st.session_state.logs = self.logs
 
-# Simulate fetching data (replace with actual data fetching later)
+# Get current data (real or demo)
 def get_current_data():
-    account = get_account()
-    btc_price = get_btc_price() or 0
-    cbbtc_balance = get_token_balance(CBBTC_CONTRACT_ADDRESS, account.address)
-    usdc_balance = get_token_balance(USDC_CONTRACT_ADDRESS, account.address)
-    
-    # Fetch yield data if enabled
-    staked_lp = 0
-    earned_rewards = 0
-    if ENABLE_YIELD_OPTIMIZATION:
-        staked_lp = get_staked_lp_balance()
-        earned_rewards = get_earned_rewards()
+    if DEMO_MODE:
+        # In demo mode, use simulated data
+        btc_price = 67000 + random.uniform(-500, 500)  # Simulate BTC price around $67K
+        cbbtc_balance = 0.0125  # Simulated cbBTC balance
+        usdc_balance = 250.75   # Simulated USDC balance
+        
+        # Simulate yield data
+        staked_lp = 0.0023 if ENABLE_YIELD_OPTIMIZATION else 0
+        earned_rewards = 0.15 if ENABLE_YIELD_OPTIMIZATION else 0
+    else:
+        # In real mode, fetch actual data
+        try:
+            account = get_account()
+            btc_price = get_btc_price() or 65000
+            cbbtc_balance = get_token_balance(CBBTC_CONTRACT_ADDRESS, account.address)
+            usdc_balance = get_token_balance(USDC_CONTRACT_ADDRESS, account.address)
+            
+            # Fetch yield data if enabled
+            staked_lp = 0
+            earned_rewards = 0
+            if ENABLE_YIELD_OPTIMIZATION:
+                staked_lp = get_staked_lp_balance()
+                earned_rewards = get_earned_rewards()
+        except Exception as e:
+            # Fallback to demo data if there's an error
+            st.error(f"Error fetching data: {e}. Using simulated data.")
+            btc_price = 65000
+            cbbtc_balance = 0.01
+            usdc_balance = 200
+            staked_lp = 0.002 if ENABLE_YIELD_OPTIMIZATION else 0
+            earned_rewards = 0.1 if ENABLE_YIELD_OPTIMIZATION else 0
     
     return {
         'timestamp': datetime.now(),

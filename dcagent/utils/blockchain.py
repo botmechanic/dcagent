@@ -1,12 +1,35 @@
 from web3 import Web3
-from web3.middleware import geth_poa_middleware
 import json
 import os
 import time
 import logging
 import random
 from typing import Optional, Dict, Any, TypeVar, Callable, Tuple, List
-from web3.exceptions import TransactionNotFound, TimeExhausted
+
+# Import middleware with fallback for different web3.py versions
+try:
+    # Try Web3.py v5.x style import
+    from web3.middleware import geth_poa_middleware
+except ImportError:
+    # For Web3.py v6.x or if not available
+    try:
+        from web3.middleware import construct_sign_and_send_raw_middleware as geth_poa_middleware
+    except ImportError:
+        # Define a simple middleware that can be used instead
+        def geth_poa_middleware(make_request, w3):
+            def middleware(method, params):
+                return make_request(method, params)
+            return middleware
+
+# Import exception types with fallback
+try:
+    from web3.exceptions import TransactionNotFound, TimeExhausted
+except ImportError:
+    # Define dummy exception classes if imports fail
+    class TransactionNotFound(Exception):
+        pass
+    class TimeExhausted(Exception):
+        pass
 
 from dcagent.config import BASE_RPC_URL, BASE_CHAIN_ID, PRIVATE_KEY
 
@@ -14,7 +37,16 @@ logger = logging.getLogger(__name__)
 
 # Initialize web3 connection to Base
 web3 = Web3(Web3.HTTPProvider(BASE_RPC_URL))
-web3.middleware_onion.inject(geth_poa_middleware, layer=0)
+
+# Add middleware with fallback for different web3.py versions
+try:
+    web3.middleware_onion.inject(geth_poa_middleware, layer=0)
+except (TypeError, AttributeError):
+    # For newer Web3.py versions
+    try:
+        web3.middleware_onion.add(geth_poa_middleware)
+    except Exception as e:
+        logger.warning(f"Failed to add middleware: {e}. Continuing without middleware.")
 
 # Check connection
 if not web3.is_connected():

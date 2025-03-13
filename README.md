@@ -61,6 +61,16 @@ poetry run ./run_dcagent.sh
 poetry run streamlit run dashboard.py
 ```
 
+#### Run Dashboard in Demo Mode
+If you have Web3 connectivity issues or just want to see the dashboard interface:
+```bash
+poetry run ./run_dashboard_demo.sh
+# or directly:
+DEMO_MODE=true poetry run streamlit run dashboard.py
+```
+
+This will run the dashboard with simulated data, perfect for presentations.
+
 The dashboard will be available at http://localhost:8501
 
 ## Dashboard Features
