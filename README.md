@@ -11,6 +11,47 @@ DCAgent is an AI-powered autonomous agent that helps users stack Bitcoin through
 - **Yield Maximization**: Automatically stake and earn yield on your BTC holdings
 - **Analytics Dashboard**: Track performance and get AI-generated insights
 
+## System Architecture
+
+```mermaid
+graph TD
+    User[User] --> Dashboard[Streamlit Dashboard]
+    Dashboard --> Agent[DCAgent]
+    
+    subgraph "DCAgent Core"
+        Agent --> Strategies[Strategy Manager]
+        Strategies --> DCA[DCA Strategy]
+        Strategies --> Dip[Dip Strategy]
+        Strategies --> Yield[Yield Strategy]
+        
+        DCA --> AI[Claude AI Advisor]
+        Dip --> AI
+        Yield --> AI
+        
+        AI --> Market[Market Analysis]
+        AI --> Gas[Gas Optimization]
+        AI --> Insight[Strategy Insights]
+    end
+    
+    subgraph "Data Sources"
+        Agent --> Price[Price Feeds]
+        Price --> Coinbase[Coinbase API]
+        Price --> Pyth[Pyth Oracle]
+        Agent --> Block[Blockchain Data]
+    end
+    
+    subgraph "Execution Layer"
+        DCA --> Swap[Token Swaps]
+        Dip --> Swap
+        Yield --> Pool[LP Management]
+        Swap --> Router[Aerodrome Router]
+        Pool --> Gauge[Aerodrome Gauge]
+    end
+    
+    Router --> Base[(Base L2)]
+    Gauge --> Base
+```
+
 ## Tech Stack
 
 - Python 3.10+
