@@ -1,7 +1,7 @@
 import streamlit as st
 import plotly.graph_objects as go
 import pandas as pd
-import time
+import time, random
 from datetime import datetime, timedelta
 import json
 import os
@@ -65,10 +65,15 @@ class StreamlitLogHandler:
 # Get current data (real or demo)
 def get_current_data():
     if DEMO_MODE:
-        # In demo mode, use simulated data
-        btc_price = 67000 + random.uniform(-500, 500)  # Simulate BTC price around $67K
+        # In demo mode, use simulated data with current price range
+        btc_price = 80500 + random.uniform(-500, 500)  # Simulate BTC price around $80.5K
         cbbtc_balance = 0.0125  # Simulated cbBTC balance
         usdc_balance = 250.75   # Simulated USDC balance
+        
+        # Set price source and confidence for demo mode
+        confidence = btc_price * 0.005  # 0.5% confidence interval
+        confidence_pct = 0.5
+        price_source = "Coinbase (Demo)"
         
         # Simulate yield data
         staked_lp = 0.0023 if ENABLE_YIELD_OPTIMIZATION else 0
@@ -77,7 +82,18 @@ def get_current_data():
         # In real mode, fetch actual data
         try:
             account = get_account()
-            btc_price = get_btc_price() or 65000
+            # Get BTC price and confidence interval
+            price_data = get_price_with_confidence()
+            if price_data:
+                btc_price, confidence = price_data
+                price_source = "Coinbase" if confidence == btc_price * 0.005 else "Pyth"
+                confidence_pct = (confidence / btc_price) * 100
+            else:
+                btc_price = 65000
+                confidence = 325  # 0.5% default
+                confidence_pct = 0.5
+                price_source = "Fallback"
+                
             cbbtc_balance = get_token_balance(CBBTC_CONTRACT_ADDRESS, account.address)
             usdc_balance = get_token_balance(USDC_CONTRACT_ADDRESS, account.address)
             
@@ -91,14 +107,26 @@ def get_current_data():
             # Fallback to demo data if there's an error
             st.error(f"Error fetching data: {e}. Using simulated data.")
             btc_price = 65000
+            confidence = 325  # 0.5% default
+            confidence_pct = 0.5
+            price_source = "Fallback"
             cbbtc_balance = 0.01
             usdc_balance = 200
             staked_lp = 0.002 if ENABLE_YIELD_OPTIMIZATION else 0
             earned_rewards = 0.1 if ENABLE_YIELD_OPTIMIZATION else 0
     
+    # For demo mode, set default confidence and source
+    if DEMO_MODE:
+        confidence = btc_price * 0.005  # 0.5% of price
+        confidence_pct = 0.5
+        price_source = "Coinbase (Demo)"
+        
     return {
         'timestamp': datetime.now(),
         'btc_price': btc_price,
+        'confidence': confidence,
+        'confidence_pct': confidence_pct,
+        'price_source': price_source,
         'cbbtc_balance': cbbtc_balance,
         'usdc_balance': usdc_balance,
         'staked_lp': staked_lp,
@@ -110,7 +138,9 @@ def update_price_history():
     current_data = get_current_data()
     st.session_state.price_history.append({
         'timestamp': current_data['timestamp'],
-        'price': current_data['btc_price']
+        'price': current_data['btc_price'],
+        'confidence': current_data['confidence'],
+        'price_source': current_data['price_source']
     })
     # Keep only the last 24 hours of data
     if len(st.session_state.price_history) > 144:  # 144 * 10 minutes = 24 hours
@@ -174,14 +204,15 @@ def main():
         st.header("Portfolio Overview")
         
         # Create metrics at the top
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
         
         with col1:
             st.metric(
-                label="BTC Price", 
+                label=f"BTC Price ({current_data['price_source']})", 
                 value=f"${current_data['btc_price']:,.2f}",
                 delta=f"{(current_data['btc_price'] - 65000)/65000:.2%}" if current_data['btc_price'] else None
             )
+            st.caption(f"± ${current_data['confidence']:,.2f} ({current_data['confidence_pct']:.2f}%)")
         
         with col2:
             st.metric(
@@ -194,19 +225,60 @@ def main():
                 label="USDC Balance", 
                 value=f"${current_data['usdc_balance']:,.2f}"
             )
+            
+        with col4:
+            if current_data['cbbtc_balance'] > 0:
+                portfolio_value = current_data['cbbtc_balance'] * current_data['btc_price']
+                st.metric(
+                    label="Portfolio Value", 
+                    value=f"${portfolio_value:,.2f}"
+                )
+            else:
+                st.metric(
+                    label="Portfolio Value", 
+                    value="$0.00"
+                )
         
-        # Portfolio value over time chart
+        # BTC price chart with confidence interval
         st.subheader("BTC Price Chart")
         if st.session_state.price_history:
             df = pd.DataFrame(st.session_state.price_history)
+            
+            # Create figure
             fig = go.Figure()
+            
+            # Add BTC price line
             fig.add_trace(go.Scatter(
                 x=df['timestamp'], 
                 y=df['price'],
                 mode='lines',
                 name='BTC Price',
-                line=dict(color='#F7931A', width=2)
+                line=dict(color='#F7931A', width=2),
+                hovertemplate='%{y:$,.2f}<br>Source: %{text}<extra></extra>',
+                text=df['price_source']
             ))
+            
+            # Add hover data showing price source
+            hover_data = []
+            for _, row in df.iterrows():
+                hover_data.append(f"Source: {row['price_source']}<br>± ${row['confidence']:,.2f}")
+            
+            # Add a custom annotation showing the price source
+            last_price = df['price'].iloc[-1]
+            last_time = df['timestamp'].iloc[-1]
+            last_source = df['price_source'].iloc[-1]
+            
+            fig.add_annotation(
+                x=last_time,
+                y=last_price,
+                text=f"Source: {last_source}",
+                showarrow=True,
+                arrowhead=1,
+                ax=50,
+                ay=-40
+            )
+            
+            # Update layout
             fig.update_layout(
                 height=400,
                 xaxis_title="Time",
@@ -215,6 +287,9 @@ def main():
                 margin=dict(l=0, r=0, t=10, b=0)
             )
             st.plotly_chart(fig, use_container_width=True)
+            
+            # Show a note about the price source
+            st.caption(f"Current price source: {current_data['price_source']} (± ${current_data['confidence']:,.2f}, {current_data['confidence_pct']:.2f}% confidence)")
         else:
             st.info("Waiting for price data...")
         
@@ -434,21 +509,42 @@ def main():
                 for key, value in yield_performance.items():
                     st.text(f"{key}: {value}")
                     
-        # BTC Price with Moving Averages
+        # BTC Price with Moving Averages and Confidence
         st.subheader("BTC Price with Moving Averages")
         if len(st.session_state.price_history) > 24:
             df = pd.DataFrame(st.session_state.price_history)
             df['MA_6h'] = df['price'].rolling(window=6).mean()
             df['MA_24h'] = df['price'].rolling(window=24).mean()
             
+            # Add current confidence interval to the chart
+            confidence = current_data['confidence']
+            upper_bound = current_data['btc_price'] + confidence
+            lower_bound = current_data['btc_price'] - confidence
+            
             fig = go.Figure()
+            
+            # Add confidence interval as a shaded area at the right edge of the chart
+            latest_time = df['timestamp'].iloc[-1]
+            
+            # Create a confidence band for the latest price
+            fig.add_trace(go.Scatter(
+                x=[latest_time, latest_time],
+                y=[lower_bound, upper_bound],
+                mode='lines',
+                line=dict(color='rgba(200, 200, 200, 0.5)', width=10),
+                name=f'Price Confidence ({current_data["confidence_pct"]:.2f}%)'
+            ))
+            
+            # Add main price line
             fig.add_trace(go.Scatter(
                 x=df['timestamp'], 
                 y=df['price'],
                 mode='lines',
-                name='BTC Price',
+                name=f'BTC Price ({current_data["price_source"]})',
                 line=dict(color='#F7931A', width=2)
             ))
+            
+            # Add moving averages
             fig.add_trace(go.Scatter(
                 x=df['timestamp'], 
                 y=df['MA_6h'],
@@ -463,6 +559,7 @@ def main():
                 name='24-Hour MA',
                 line=dict(color='green', width=1.5)
             ))
+            
             fig.update_layout(
                 height=400,
                 xaxis_title="Time",
